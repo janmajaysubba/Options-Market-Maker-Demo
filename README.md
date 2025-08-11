@@ -14,7 +14,7 @@ It is designed for learning, experimentation, and as a stepping stone toward bui
   - **Heatmap** (expiry vs. strike)
   - **3D surface plot** for volatility term/moneyness structure
 
-##Limitations
+## Limitations
 - Assumes constant volatility and interest rates over the option’s life.
 - Dividends modeled as continuous yield (q) — discrete dividends not supported.
 - Binomial parameters may cause unstable probabilities for very short maturities or extreme inputs.
