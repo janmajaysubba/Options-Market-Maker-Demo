@@ -24,6 +24,79 @@ This project implements a toy options market-making system in Python.
   - RiskBook state saved/reloaded across runs
   - Quotes, fills, and hedges exported to CSV for analysis
 
+## Key Modules
+
+# 1) pricer.py
+- Implements the Cox–Ross–Rubinstein (CRR) binomial option pricer.
+- Supports both American (early exercise) and European options.
+- Uses vectorized backward induction for speed and numerical stability.
+- Inputs: spot S, strike K, time-to-expiry T, risk-free rate r, dividend yield q, volatility σ.
+- Outputs: fair option value (and Greeks if extended).
+
+# 2. iv_solver.py
+- Solves for implied volatility using a robust bisection method.
+- Guardrails:
+  - Rejects prices outside theoretical bounds [intrinsic,cap].
+  - Expands brackets when initial guesses fail.
+- Soft caching: reuses last solved IVs per (expiry, strike) for faster warm starts.
+- If convergence fails, falls back to midpoint volatility to avoid surface gaps.
+
+# 3. batch_surface.py
+- Pulls option chains and computes IVs in parallel across strikes and expiries.
+- Contract filters:
+  - Moneyness band (default 85–115% of spot).
+  - Liquidity filter (skips options with spreads > 20% of mid).
+- Builds a mini implied volatility surface (DataFrame grid: expiry × strike).
+- Uses multiprocessing for performance on large chains.
+
+# 4. live_data.py
+- Handles live option chain retrieval from Yahoo Finance (yfinance).
+- Functions include:
+  - Fetching spot price of the underlying.
+  - Fetching full option chain (calls + puts).
+  - Converting raw Yahoo data into clean DataFrames for downstream modules.
+- Ensures consistent and centralized access to underlying spot prices and option chain data, so all modules use the same snapshot of market data.
+- Includes lightweight error handling for missing/illiquid strikes.
+
+# 5. mm_quote.py
+- Generates market-maker bid/ask quotes from pricer fair values.
+- Adjustments applied:
+  - Edge (absolute or relative).
+  - Inventory biasing (skews mids based on net delta/vega).
+- Outputs structured quote dictionaries / DataFrames for simulated execution.
+
+# 6. risk_tracker.py
+- Tracks risk exposures:
+  - Net delta (options + underlying).
+  - Net vega (per expiry).
+- Maintains inventory book:
+  - Option positions.
+  - Underlying hedges.
+- Computes PnL:
+  - Realized PnL (executed trades).
+  - Unrealized PnL (mark-to-market).
+- Persists state in JSON files → enables simulation resume/replay.
+
+# 7. mm_vega.py
+- Implements soft vega hedging logic.
+- Chooses ATM option in the same expiry for hedging (avoids cross-expiry risk).
+- Keeps exposures within a configurable band (default ±5 vega per expiry).
+- Partial hedging (fraction of excess) ensures smoother adjustments.
+
+# 8. mm_loop_realtime.py
+- The main orchestrator loop that ties all modules together.
+- Responsibilities:
+  - Refresh IV surface every 15s.
+  - Simulate spot as a toy GBM random walk.
+  - Quote a set of strikes/expiries.
+  - Simulate random fills (probability-based).
+  - Update risk tracker after trades.
+  - Apply delta hedges when thresholds breached.
+  - Apply soft vega hedges with ATM options.
+- Logging & output:
+  - Quotes, fills, hedges → CSV logs in logs/.
+  - Console summary of per-expiry risk and PnL at the end.
+
 ## Limitations
 - Fills are random (no real order flow).
 - Spot is a toy random walk (not the actual market).
