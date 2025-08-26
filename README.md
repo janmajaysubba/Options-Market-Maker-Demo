@@ -31,7 +31,8 @@ This project implements a toy options market-making system in Python.
 - Supports both American (early exercise) and European options.
 - Uses vectorized backward induction for speed and numerical stability.
 - Inputs: spot S, strike K, time-to-expiry T, risk-free rate r, dividend yield q, volatility σ.
-- Outputs: fair option value (and Greeks if extended).
+- Outputs: fair option value.
+- Does not compute Greeks directly, but serves as the pricing engine for other modules (e.g., risk_tracker.py) that derive Greeks.
 
 # 2) iv_solver.py
 - Solves for implied volatility using a robust bisection method.
@@ -66,6 +67,7 @@ This project implements a toy options market-making system in Python.
 - Outputs structured quote dictionaries / DataFrames for simulated execution.
 
 # 6) risk_tracker.py
+- Computes Greeks by bumping spot or vol slightly and re-calling pricer.py to numerically estimate delta and vega.
 - Tracks risk exposures:
   - Net delta (options + underlying).
   - Net vega (per expiry).
