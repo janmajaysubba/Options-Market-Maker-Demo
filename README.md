@@ -33,7 +33,7 @@ This project implements a toy options market-making system in Python.
 - Inputs: spot S, strike K, time-to-expiry T, risk-free rate r, dividend yield q, volatility σ.
 - Outputs: fair option value (and Greeks if extended).
 
-# 2. iv_solver.py
+# 2) iv_solver.py
 - Solves for implied volatility using a robust bisection method.
 - Guardrails:
   - Rejects prices outside theoretical bounds [intrinsic,cap].
@@ -41,7 +41,7 @@ This project implements a toy options market-making system in Python.
 - Soft caching: reuses last solved IVs per (expiry, strike) for faster warm starts.
 - If convergence fails, falls back to midpoint volatility to avoid surface gaps.
 
-# 3. batch_surface.py
+# 3) batch_surface.py
 - Pulls option chains and computes IVs in parallel across strikes and expiries.
 - Contract filters:
   - Moneyness band (default 85–115% of spot).
@@ -49,7 +49,7 @@ This project implements a toy options market-making system in Python.
 - Builds a mini implied volatility surface (DataFrame grid: expiry × strike).
 - Uses multiprocessing for performance on large chains.
 
-# 4. live_data.py
+# 4) live_data.py
 - Handles live option chain retrieval from Yahoo Finance (yfinance).
 - Functions include:
   - Fetching spot price of the underlying.
@@ -58,14 +58,14 @@ This project implements a toy options market-making system in Python.
 - Ensures consistent and centralized access to underlying spot prices and option chain data, so all modules use the same snapshot of market data.
 - Includes lightweight error handling for missing/illiquid strikes.
 
-# 5. mm_quote.py
+# 5) mm_quote.py
 - Generates market-maker bid/ask quotes from pricer fair values.
 - Adjustments applied:
   - Edge (absolute or relative).
   - Inventory biasing (skews mids based on net delta/vega).
 - Outputs structured quote dictionaries / DataFrames for simulated execution.
 
-# 6. risk_tracker.py
+# 6) risk_tracker.py
 - Tracks risk exposures:
   - Net delta (options + underlying).
   - Net vega (per expiry).
@@ -77,13 +77,13 @@ This project implements a toy options market-making system in Python.
   - Unrealized PnL (mark-to-market).
 - Persists state in JSON files → enables simulation resume/replay.
 
-# 7. mm_vega.py
+# 7) mm_vega.py
 - Implements soft vega hedging logic.
 - Chooses ATM option in the same expiry for hedging (avoids cross-expiry risk).
 - Keeps exposures within a configurable band (default ±5 vega per expiry).
 - Partial hedging (fraction of excess) ensures smoother adjustments.
 
-# 8. mm_loop_realtime.py
+# 8) mm_loop_realtime.py
 - The main orchestrator loop that ties all modules together.
 - Responsibilities:
   - Refresh IV surface every 15s.
