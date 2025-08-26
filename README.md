@@ -116,3 +116,12 @@ This project is intended as a research and educational experiment and is not yet
 Install dependencies:
 ```bash
 pip install numpy pandas yfinance
+```
+## Usage
+Clone the repo and keep all `.py` modules in the same directory (default structure).
+Then, to run the market-making loop:
+
+```bash
+python mm_loop_realtime.py
+```
+
