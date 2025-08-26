@@ -111,9 +111,8 @@ This project is intended as a research and educational experiment and is not yet
 ## Requirements
 - NumPy
 - Pandas
-- Matplotlib
 - yfinance
 
 Install dependencies:
 ```bash
-pip install numpy pandas matplotlib yfinance
+pip install numpy pandas yfinance
