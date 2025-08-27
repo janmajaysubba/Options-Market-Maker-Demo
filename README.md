@@ -106,6 +106,7 @@ This project implements a toy options market-making system in Python.
 - The option pricing model (assuming continuous dividend yield, not discrete) and the IV solving method used are accurate, but not fast enough. (Building IV surfaces for 2 epiries with 40-50 strikes takes around 2-4 secs on MacBook Air M2)
 - Limited hedging logic: only basic delta-hedging and soft vega management are implemented
 - No transaction costs, slippage, or latency modeling.
+
 This project is intended as a research and educational experiment and is not yet suitable for live trading.
 
 ## Requirements
