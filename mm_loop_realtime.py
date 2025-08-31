@@ -209,8 +209,14 @@ def main():
                         fills_count += 1
                         fwriter.writerow([time.time(), ex, float(K), "BUY", qty, float(price), float(spot)])
                         print(f"    FILL: BOUGHT 1 @ {price:.2f} | Δ={d:+.2f}, V={v:+.4f}")
-
-                # 4) vega hedge (same-expiry ATM) if outside band
+            
+            # Revalue Greek exposures using current spot + latest surface before hedging
+            book.revalue_exposures(spot, piv, r=R, q=Q, N=N_BASE)
+            
+            # 4) vega hedge (same-expiry ATM) if outside band
+            for ex in piv.index:
+                T = live_data.yearfrac(ex)
+                N_local = adaptive_steps(T)
                 qty_vh, _ = vega_hedge(
                     book, expiry=ex, spot=spot, T=T, r=R, q=Q, piv=piv, N=N_local,
                     option=OPTION, vega_band=VEGA_BAND,
@@ -219,22 +225,26 @@ def main():
                 if qty_vh != 0:
                     vega_hedges += 1
                     print(f"  VEGA HEDGE: {('BUY' if qty_vh>0 else 'SELL')} {abs(qty_vh)} x ATM {ex} "
-                          f"(new vega={book.net_vega.get(ex,0.0):+.4f})")
+                            f"(new vega={book.net_vega.get(ex,0.0):+.4f})")
                     hwriter.writerow([time.time(), "VEGA", qty_vh, float(spot), float(spot)])
+            
+            # Revalue Greek exposures (which may have changed due to vega hedging)
+            book.revalue_exposures(spot, piv, r=R, q=Q, N=N_BASE)
+            
+            # 5) delta hedge (in shares) if exposure too large
+            net_delta_total_sh = book.net_delta * CONTRACT_MULT + book.under_pos['qty']
+            if abs(net_delta_total_sh) > DELTA_HEDGE_THRESHOLD_SHARES:
+                hedge_shares = -int(round(net_delta_total_sh))
+                book.apply_share_hedge(spot, hedge_shares)
+                delta_hedges += 1
+                hwriter.writerow([time.time(), 'DELTA', hedge_shares, float(spot), float(spot)])
+                print(f"DELTA HEDGE: traded {hedge_shares:+d} sh → "
+                    f"Δ_total(sh)={book.net_delta*CONTRACT_MULT + book.under_pos['qty']:+.0f}")
+            
+            print(f"Risk: Δ_options(sh)={book.net_delta*CONTRACT_MULT:+.0f}, "
+                f"Δ_total(sh)={book.net_delta*CONTRACT_MULT + book.under_pos['qty']:+.0f}, "
+                f"vega={ {ex: round(book.net_vega.get(ex,0.0),4) for ex in piv.index} }")
 
-                # 5) delta hedge (in shares) if exposure too large
-                net_delta_shares = book.net_delta * CONTRACT_MULT
-                if abs(net_delta_shares) > DELTA_HEDGE_THRESHOLD_SHARES:
-                    hedge_shares = -int(round(net_delta_shares))
-                    book.apply_share_hedge(spot, hedge_shares)
-                    delta_hedges += 1
-                    hwriter.writerow([time.time(), "DELTA", hedge_shares, float(spot), float(spot)])
-                    print(f"  DELTA HEDGE: traded {hedge_shares:+d} shares → "
-                          f"net Δ={book.net_delta:+.2f} (≈ {book.net_delta*CONTRACT_MULT:+.0f} sh)")
-
-                # per-expiry risk print
-                print(f"  Risk: Δ={book.net_delta:+.2f} (≈ {book.net_delta*CONTRACT_MULT:+.0f} sh), "
-                      f"vega[{ex}]={book.net_vega.get(ex,0.0):+.4f}")
 
         # ---------- end loop ----------
 
@@ -253,13 +263,51 @@ def main():
         if 'fills_count' in locals():
             print("\n--- summary ---")
             print(f"Fills: {fills_count} | Delta hedges: {delta_hedges} | Vega hedges: {vega_hedges}")
-            print(f"Final spot ~ {spot:.4f}")
-            print(f"Realized PnL:   {getattr(book,'realized_pnl',0.0):+.2f}")
+            print(f"\nFinal spot ~ {spot:.4f}")
+            print(f"\nRealized PnL:   {getattr(book,'realized_pnl',0.0):+.2f}")
             print(f"Unrealized PnL: {unreal:+.2f}")
             print(f"Total PnL:      {getattr(book,'realized_pnl',0.0) + unreal:+.2f}")
-            print(f"Final net Δ = {book.net_delta:+.2f} (≈ {book.net_delta*CONTRACT_MULT:+.0f} sh)")
+            print(f"\nFinal net Δ (options-only, sh) = {book.net_delta*CONTRACT_MULT:+.0f}")
+            print(f"Final net Δ (TOTAL sh incl. stock) = {book.net_delta*CONTRACT_MULT + book.under_pos['qty']:+.0f}")
             print(f"Final per-expiry vega = {{ {', '.join([f'{k}: {round(v,4)}' for k,v in book.net_vega.items()])} }}")
 
+        
+        snap = book.inventory_snapshot(include_greeks=True,
+                               spot=spot, surface_piv=piv,
+                               r=R, q=Q, N=N_BASE)
+        rows = snap.get("options_with_greeks", [])
+
+        print("\nInventory Greeks (current):")
+
+        # print stock first
+        sh = book.under_pos["qty"]
+        if sh:
+            print(f"  Underlying   qty={sh}")
+
+        # table header
+        print(f"{'Expiry':<12} {'Strike':<6} {'Type':<4} {'Qty':>5} {'Δ/opt':>10} {'Δ_total(sh)':>14} {'V/opt':>10} {'V_total':>10}")
+
+        opts_delta_sh_sum = 0.0
+        opts_vega_sum = 0.0
+        
+        # table rows
+        for r_ in rows:
+            opt_code = "C" if r_["type"].lower().startswith("c") else "P"
+            strike_lbl = int(r_["strike"]) if float(r_["strike"]).is_integer() else r_["strike"]
+            
+            # accumulate totals
+            opts_delta_sh_sum += r_["delta_shares_total"]
+            opts_vega_sum     += r_["vega_total"]
+            
+            print(f"{r_['expiry']:<12} {strike_lbl:<6} {opt_code:<4} "
+                f"{r_['qty']:>+5d} {r_['delta_per_opt']:>+10.4f} {r_['delta_shares_total']:>+14.0f} "
+                f"{r_['vega_per_opt']:>+10.4f} {r_['vega_total']:>+10.4f}")
+
+        # Totals row(s)
+        print("-" * 86)
+        print(f"{'Totals (options-only)':<24} "
+            f"{'':>5} {'':>10} {opts_delta_sh_sum:>+14.0f} {'':>10} {opts_vega_sum:>+14.4f}")
+    
         # persist risk state and close logs
         try:
             book.save("risk_state.json")
