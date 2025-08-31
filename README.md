@@ -126,3 +126,92 @@ Then, to run the market-making loop:
 python mm_loop_realtime.py
 ```
 
+## Example Output
+
+Before the market making loop, the specified ticker's expiries, Spot price, and options chain are pulled from yahoo finance. Then the first IV surface is built. 
+
+```yaml
+Building IV surface...
+IV surface built in 3.219 seconds
+Batched IV surface to grid in 0.005 seconds
+Init spot=645.0500 | expiries=('2025-09-02', '2025-09-03') | strikes=45
+
+--- running live loop ---
+```
+
+The spot price(simulated, not actual market moves) moves every tick (3s default), and the quotes are also refreshed accordingly. Fills and hedges also occur tick (3s default), while the IV surface is refreshed every 15 secs by default. 
+
+```yaml
+Tick: spot=645.2987
+  QUOTE K=630.0 IV=0.1075 | FV_raw=15.4383 FV_adj=15.4296 → 15.3525/15.5068
+    FILL: SOLD   1 @ 15.51 | Δ=+0.99, V=+0.1725
+  QUOTE K=631.0 IV=0.1207 | FV_raw=14.4471 FV_adj=14.4384 → 14.3662/14.5106
+    FILL: SOLD   1 @ 14.51 | Δ=+0.98, V=+0.7043
+  QUOTE K=632.0 IV=0.1218 | FV_raw=13.4558 FV_adj=13.4470 → 13.3798/13.5143
+  QUOTE K=633.0 IV=0.1223 | FV_raw=12.4691 FV_adj=12.4604 → 12.3981/12.5227
+  QUOTE K=634.0 IV=0.1214 | FV_raw=11.4867 FV_adj=11.4780 → 11.4206/11.5353
+    FILL: BOUGHT 1 @ 11.42 | Δ=+0.95, V=+2.2229
+  QUOTE K=635.0 IV=0.1195 | FV_raw=10.5095 FV_adj=10.5007 → 10.4482/10.5532
+  QUOTE K=601.0 IV=0.2446 | FV_raw=44.4985 FV_adj=44.4566 → 44.2343/44.6789
+    FILL: BOUGHT 1 @ 44.23 | Δ=+1.00, V=+0.1274
+  QUOTE K=602.0 IV=0.2369 | FV_raw=43.4985 FV_adj=43.4566 → 43.2393/43.6739
+  QUOTE K=604.0 IV=0.2201 | FV_raw=41.4985 FV_adj=41.4567 → 41.2494/41.6639
+  QUOTE K=605.0 IV=0.2114 | FV_raw=40.4986 FV_adj=40.4567 → 40.2544/40.6590
+  QUOTE K=606.0 IV=0.2342 | FV_raw=39.5031 FV_adj=39.4612 → 39.2639/39.6585
+  QUOTE K=607.0 IV=0.2274 | FV_raw=38.5031 FV_adj=38.4613 → 38.2690/38.6536
+Risk: Δ_options(sh)=+402, Δ_total(sh)=-3, vega={'2025-09-02': -1.8127, '2025-09-03': 0.2879}
+
+Tick: spot=644.6829
+  QUOTE K=630.0 IV=0.1075 | FV_raw=14.8234 FV_adj=14.8013 → 14.7273/14.8753
+  QUOTE K=631.0 IV=0.1207 | FV_raw=13.8354 FV_adj=13.8132 → 13.7442/13.8823
+    FILL: BOUGHT 1 @ 13.74 | Δ=+0.98, V=+1.0587
+  QUOTE K=632.0 IV=0.1218 | FV_raw=12.8472 FV_adj=12.8251 → 12.7609/12.8892
+    FILL: BOUGHT 1 @ 12.76 | Δ=+0.97, V=+1.5541
+  QUOTE K=633.0 IV=0.1223 | FV_raw=11.8650 FV_adj=11.8429 → 11.7837/11.9021
+  QUOTE K=634.0 IV=0.1214 | FV_raw=10.8879 FV_adj=10.8658 → 10.8115/10.9201
+  QUOTE K=635.0 IV=0.1195 | FV_raw=9.9171 FV_adj=9.8949 → 9.8455/9.9444
+  QUOTE K=601.0 IV=0.2446 | FV_raw=43.8831 FV_adj=43.8400 → 43.6208/44.0592
+    FILL: SOLD   1 @ 44.06 | Δ=+1.00, V=+0.1274
+  QUOTE K=602.0 IV=0.2369 | FV_raw=42.8831 FV_adj=42.8400 → 42.6258/43.0542
+  QUOTE K=604.0 IV=0.2201 | FV_raw=40.8830 FV_adj=40.8399 → 40.6357/41.0441
+  QUOTE K=605.0 IV=0.2114 | FV_raw=39.8830 FV_adj=39.8399 → 39.6407/40.0391
+  QUOTE K=606.0 IV=0.2342 | FV_raw=38.8883 FV_adj=38.8452 → 38.6509/39.0394
+  QUOTE K=607.0 IV=0.2274 | FV_raw=37.8883 FV_adj=37.8451 → 37.6559/38.0344
+DELTA HEDGE: traded -93 sh → Δ_total(sh)=+0
+Risk: Δ_options(sh)=+498, Δ_total(sh)=+0, vega={'2025-09-02': 0.3472, '2025-09-03': 0.2196}
+[surface] rebuilt in 3.35s, rows=67
+```
+
+Finally, at the end of the 1 minute loop a final summary of all the trades that occured and current Greek exposures along with the inventory snapshot is printed out. 
+
+```yaml
+--- summary ---
+Fills: 65 | Delta hedges: 13 | Vega hedges: 0
+
+Final spot ~ 648.2691
+
+Realized PnL:   -414.79
+Unrealized PnL: -856.46
+Total PnL:      -1271.25
+
+Final net Δ (options-only, sh) = +3287
+Final net Δ (TOTAL sh incl. stock) = +1
+Final per-expiry vega = { 2025-09-02: 5.4953, 2025-09-03: 0.9653 }
+
+INVENTORY:
+  Underlying   qty=-3286.0
+Expiry       Strike Type   Qty      Δ/opt    Δ_total(sh)      V/opt    V_total
+2025-09-02   630    C       +3    +0.9988           +300    +0.0218    +0.0654
+2025-09-02   631    C       +3    +0.9954           +299    +0.1586    +0.4757
+2025-09-02   632    C       +4    +0.9925           +397    +0.3171    +1.2685
+2025-09-02   633    C       +3    +0.9883           +296    +0.5999    +1.7997
+2025-09-02   634    C       +1    +0.9832            +98    +0.8094    +0.8094
+2025-09-02   635    C       +1    +0.9768            +98    +1.0765    +1.0765
+2025-09-03   601    C       +5    +0.9996           +500    +0.0625    +0.3124
+2025-09-03   602    C       +3    +0.9996           +300    +0.0624    +0.1872
+2025-09-03   604    C       +6    +0.9997           +600    +0.0414    +0.2486
+2025-09-03   605    C       +3    +0.9998           +300    +0.0272    +0.0815
+2025-09-03   606    C       +1    +0.9990           +100    +0.1356    +0.1356
+--------------------------------------------------------------------------------------
+Totals (options-only)                              +3287                   +6.4607
+```
