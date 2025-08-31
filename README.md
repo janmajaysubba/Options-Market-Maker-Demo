@@ -227,23 +227,20 @@ In addition to printing activity to the terminal, the demo writes structured log
 
 - quotes_*.csv
 
-Records every generated option quote.
+  Records every generated option quote.
 
-Columns:
-ts, expiry, strike, fv_adj, bid, ask, iv
+  Columns: ts, expiry, strike, fv_adj, bid, ask, iv
 
 
 - fills_*.csv
 
-Records each simulated trade execution (when a bid/ask is hit).
+  Records each simulated trade execution (when a bid/ask is hit).
 
-Columns:
-ts, expiry, strike, side, qty, price, spot
+  Columns: ts, expiry, strike, side, qty, price, spot
 
 
 - hedges_*.csv
 
-Records delta and vega hedge trades.
+  Records delta and vega hedge trades.
 
-Columns:
-ts, type, qty, price, spot
+  Columns: ts, type, qty, price, spot
