@@ -64,13 +64,10 @@ class RiskBook:
         price when connected to a broker/exchange.
         Returns: (delta_per_option, vega_per_option) at the moment of the fill.
         """
-        # Greeks at trade time (per option)
-        from risk_tracker import delta as _delta, vega as _vega
-        d = _delta(S, K, T, r, q, iv, N, option)
-        v = _vega (S, K, T, r, q, iv, N, option)
-        self.net_delta += qty * d
-        self.net_vega[expiry] = self.net_vega.get(expiry, 0.0) + qty * v
-
+        
+        d = delta(S, K, T, r, q, iv, N, option)
+        v = vega (S, K, T, r, q, iv, N, option)
+        
         # Inventory accounting (average price carry)
         key = (expiry, float(K), option)
         pos = self.opt_pos.get(key, {"qty": 0, "avg": 0.0})
@@ -156,6 +153,57 @@ class RiskBook:
         unreal += (spot - self.under_pos["avg"]) * self.under_pos["qty"]
         return unreal
 
+    def revalue_exposures(self, spot, surface_piv, r, q, N):
+        """
+        Recomputes risk exposures (delta, vega) from current inventory using current market inputs.
+    
+        Why:
+        - Incremental Greeks from trade time can drift as spot/IVs change.
+        - This method ensures exposures reflect the latest spot and implied vol surface.
+    
+        Args:
+            spot (float): Current underlying spot price
+            surface_piv (pd.DataFrame): Pivoted implied vol surface [expiry x strike] -> IV
+            r (float): Risk-free rate
+            q (float): Dividend yield (continuous)
+            N (int): Number of binomial steps for pricing/Greeks
+    
+        Notes:
+            - Delta is tracked in *per-option units* here (not share equivalents).
+            - Use self.net_delta * CONTRACT_MULT to convert options delta into shares.
+            - Vega is stored per expiry (per-option per 1 vol point).
+            - This does not touch realized PnL or positions; it only recalculates exposures.
+        """
+        net_delta_new = 0.0
+        net_vega_new = {}
+
+        # Loop through all open option positions
+        for (expiry, K, option), pos in self.opt_pos.items():
+            if pos["qty"] == 0:
+                continue  # skip flat legs
+
+            # Lookup IV from the surface for this expiry/strike
+            try:
+                iv = float(surface_piv.loc[expiry, float(K)])
+            except Exception:
+                #If IV missing for this node, skip (could fallback to cache later)
+                continue
+
+            # Time to expiry
+            T = _yearfrac(expiry)
+
+            # Per-option Greeks at current market
+            d = delta(spot, K, T, r, q, iv, N, option)
+            v = vega (spot, K, T, r, q, iv, N, option)
+
+            # Aggregate across positions
+            net_delta_new += pos["qty"] * d
+            net_vega_new[expiry] = net_vega_new.get(expiry, 0.0) + pos["qty"] * v
+
+        # Overwrite with revalued exposures
+        self.net_delta = net_delta_new
+        self.net_vega  = net_vega_new
+
     # ---- persistence (save/load risk state) ----
     def save(self, path="risk_state.json"):
         """Writes risk/positions/PnL to disk so the session can resume later."""
@@ -188,6 +236,112 @@ class RiskBook:
         rb.under_pos = {"qty": float(up.get("qty", 0.0)), "avg": float(up.get("avg", 0.0))}
         rb.realized_pnl = float(d.get("realized_pnl", 0.0))
         return rb
+    
+    # ------ Strcuturing options and underlying positions to display inventory in the final summary ------
+    
+    def inventory_snapshot(
+        self,
+        include_greeks: bool = False,
+        spot: float = None,
+        surface_piv=None,
+        r: float = None,
+        q: float = None,
+        N: int = None,
+    ):
+        """
+        Returns inventory snapshot. Cheap by default (positions only).
+        If include_greeks=True, also adds per-leg *current* Greeks using the provided market inputs.
+
+        Returns dict with:
+        - stock: {qty_shares, avg}
+        - options: list of {expiry, strike, type, qty, avg}
+        - per_expiry_vega: dict {expiry: vega_total}
+        - net_delta_share_eq: options-only delta in share equivalents (Δ * 100 * contracts)
+        - net_delta_units: options-only delta in per-option units
+        - realized_pnl
+        - (optional) options_with_greeks: list of { ... , delta_per_opt, delta_shares_total, vega_per_opt, vega_total }
+        """
+        # base snapshot (positions)
+        opts = []
+        for (expiry, K, option), pos in sorted(self.opt_pos.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
+            if pos["qty"] != 0:
+                opts.append({
+                    "expiry": expiry,
+                    "strike": K,
+                    "type": option,   # "call"/"put"
+                    "qty": pos["qty"],
+                    "avg": pos["avg"],
+                })
+
+        snap = {
+            "stock": {"qty_shares": self.under_pos["qty"], "avg": self.under_pos["avg"]},
+            "options": opts,
+            "per_expiry_vega": {ex: v for ex, v in self.net_vega.items() if abs(v) > 1e-12},
+            "net_delta_share_eq": self.net_delta * CONTRACT_MULT,
+            "net_delta_units": self.net_delta,
+            "realized_pnl": self.realized_pnl,
+        }
+
+        if not include_greeks:
+            return snap
+
+        # guard
+        if any(v is None for v in (spot, surface_piv, r, q, N)):
+            raise ValueError("include_greeks=True requires spot, surface_piv, r, q, N")
+
+        legs = []
+        for row in snap["options"]:
+            ex, K, opt, qty = row["expiry"], float(row["strike"]), row["type"], row["qty"]
+            # need IV from surface for this node; skip if missing
+            try:
+                iv = float(surface_piv.loc[ex, K])
+            except Exception:
+                continue
+            T = _yearfrac(ex)
+            d = delta(spot, K, T, r, q, iv, N, opt)
+            v = vega (spot, K, T, r, q, iv, N, opt)
+            legs.append({
+                **row,
+                "delta_per_opt": d,
+                "delta_shares_total": d * qty * CONTRACT_MULT,
+                "vega_per_opt": v,
+                "vega_total": v * qty,
+            })
+
+        snap["options_with_greeks"] = legs
+        return snap
+
+
+
+    def format_inventory(self) -> str:
+        """
+        For console summaries.
+        """
+        s = []
+        s.append("Inventory:")
+        # Stock
+        sh = self.under_pos["qty"]
+        s.append(f"- Stock: {sh:+.0f} sh @ avg {self.under_pos['avg']:.2f}" if sh else "- Stock: 0 sh")
+
+        # Options (group by expiry for readability)
+        if any(pos["qty"] != 0 for pos in self.opt_pos.values()):
+            # Build grouped lines
+            by_exp = {}
+            for (expiry, K, option), pos in self.opt_pos.items():
+                if pos["qty"] == 0:
+                    continue
+                by_exp.setdefault(expiry, []).append((K, option, pos["qty"], pos["avg"]))
+            for expiry in sorted(by_exp.keys()):
+                s.append(f"- Options {expiry}:")
+                for K, option, qty, avg in sorted(by_exp[expiry], key=lambda x: (x[0], x[1])):
+                    opt_code = ("C" if option.lower().startswith("c") else "P")
+                    s.append(f"    {int(K) if K.is_integer() else K}{opt_code:>2}  {qty:+d} @ {avg:.2f}")
+        else:
+            s.append("- Options: (none)")
+    
+    
+
+
 
 # _yearfrac :
 # Turns expiry dates 'YYYY-MM-DD' into model-ready year fractions (days/365).
