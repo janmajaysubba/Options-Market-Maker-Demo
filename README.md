@@ -128,7 +128,7 @@ python mm_loop_realtime.py
 
 ## Example Output
 
-Before the market making loop, the specified ticker's expiries, Spot price, and options chain are pulled from yahoo finance. Then the first IV surface is built. 
+When the program starts, the specified ticker’s spot price, expiries, and option chain are pulled from Yahoo Finance. The first implied volatility (IV) surface is then constructed:
 
 ```yaml
 Building IV surface...
@@ -139,7 +139,10 @@ Init spot=645.0500 | expiries=('2025-09-02', '2025-09-03') | strikes=45
 --- running live loop ---
 ```
 
-The spot price(simulated, not actual market moves) moves every tick (3s default), and the quotes are also refreshed accordingly. Fills and hedges also occur tick (3s default), while the IV surface is refreshed every 15 secs by default. 
+**Live Loop (1 minute demo)**
+
+During the loop, the spot price is simulated as a random walk and updated every tick (default: 3s).
+At each tick, new quotes are generated, fills may occur, hedges are applied, and the IV surface is refreshed periodically (default: 15s).
 
 ```yaml
 Tick: spot=645.2987
@@ -182,7 +185,9 @@ Risk: Δ_options(sh)=+498, Δ_total(sh)=+0, vega={'2025-09-02': 0.3472, '2025-09
 [surface] rebuilt in 3.35s, rows=67
 ```
 
-Finally, at the end of the 1 minute loop a final summary of all the trades that occured and current Greek exposures along with the inventory snapshot is printed out. 
+**Final Summary**
+
+At the end of the run, the program prints a complete snapshot of trades, hedges, PnL, and current risk exposures:
 
 ```yaml
 --- summary ---
@@ -215,3 +220,30 @@ Expiry       Strike Type   Qty      Δ/opt    Δ_total(sh)      V/opt    V_total
 --------------------------------------------------------------------------------------
 Totals (options-only)                              +3287                   +6.4607
 ```
+
+## CSV logs
+
+In addition to printing activity to the terminal, the demo writes structured logs to the logs/ directory for offline analysis. Three separate CSV files are created per run, each timestamped with the session start time:
+
+- quotes_*.csv
+
+Records every generated option quote.
+
+Columns:
+ts, expiry, strike, fv_adj, bid, ask, iv
+
+
+- fills_*.csv
+
+Records each simulated trade execution (when a bid/ask is hit).
+
+Columns:
+ts, expiry, strike, side, qty, price, spot
+
+
+- hedges_*.csv
+
+Records delta and vega hedge trades.
+
+Columns:
+ts, type, qty, price, spot
