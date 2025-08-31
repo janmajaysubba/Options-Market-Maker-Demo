@@ -277,7 +277,7 @@ def main():
                                r=R, q=Q, N=N_BASE)
         rows = snap.get("options_with_greeks", [])
 
-        print("\nInventory Greeks (current):")
+        print("\nInventory:")
 
         # print stock first
         sh = book.under_pos["qty"]
